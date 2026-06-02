@@ -1,285 +1,296 @@
-# Class-QQ-Instant-Messaging-AI-Avatar
+# Distributed Software Systems — AI 即时通讯系统
 
-`integration-six-layer` 是当前仓库的主集成分支。
-
-这个分支已经从最初的“六层协作拆分视图”重新整理回标准的可运行工程结构，同时在 Git 历史中保留了 6 位成员各自负责层的提交记录，便于后续继续开发、展示分工以及查看 contribution。
+> 分布式软件系统课程项目 | 6 人协作开发  
+> 仓库地址：https://github.com/Ismweirdo/Distributed-Software-Systems1
 
 ## 项目简介
 
-本项目是一个带有 AI 角色对话能力的即时通讯系统，整体包含以下核心内容：
+本项目是一个**带有 AI Bot 化身能力的即时通讯系统**，用户可导入 QQ 聊天记录自动生成具有特定人物语言风格的 AI 机器人，支持多级记忆（短期/长期/RAG 检索）与流式对话。系统采用前后端分离架构，支持 Docker 容器化部署，面向 Redis / MySQL / RabbitMQ 的分布式演进。
 
-- Vue 3 前端聊天客户端
-- Spring Boot 后端服务
-- 基于 WebSocket 的实时通信能力
-- Bot 编排与 AI 对话能力
-- 长短期记忆与 RAG 相关能力
-- 面向 Redis / MySQL / RabbitMQ 的分布式演进支持
-- Docker 化部署文件与测试脚本
+**核心特色：**
 
-当前仓库适合用于：
+- 完整的 IM 功能：注册登录、好友管理、群组管理、私聊/群聊、消息已读/撤回
+- WebSocket 实时通信：STOMP 协议，支持内置 Broker 与 RabbitMQ Relay 双模式
+- AI Bot 化身：聊天记录导入 → 技能蒸馏 → LLM 驱动的个性化回复
+- 多级记忆系统：工作记忆 → 短期缓存 → 长期存储 → RAG 向量检索
+- 流式对话：SSE 协议，前端实时渲染打字效果
+- 容器化部署：Docker Compose 一键启动全部服务
 
-- 小组协作开发
-- 展示分支分工和 contribution
-- 本地构建与运行验证
-- 后续继续向更稳定的主线分支演进
+---
 
-## 当前分支定位
+## 技术栈
 
-`integration-six-layer` 是当前仓库的主工作分支，也是六个成员分支汇总后的集成分支。
+| 层级 | 技术 |
+|------|------|
+| 前端 | Vue 3 (Composition API) + Vite + Element Plus + Pinia + Vue Router |
+| 后端 | Spring Boot 3 + MyBatis-Plus + Spring Security + JWT (HS256) |
+| 实时通信 | WebSocket STOMP (内置 Broker + RabbitMQ STOMP Relay) |
+| 数据库 | MySQL 8.4 + Redis 7 + RabbitMQ 3 |
+| AI 集成 | OpenAI 兼容 API (DeepSeek / OpenAI / 自定义 LLM) |
+| 部署 | Docker Compose + Nginx |
+| 测试 | Python 压力测试脚本 (Locust 风格) |
 
-这个分支主要用于：
+---
 
-- 合并六个成员各自负责的层分支
-- 将六层拆分结构恢复成标准可运行结构
-- 作为后续统一开发与联调的基础分支
-- 作为后续查看整体 contribution 的主要分支
+## 项目结构
 
-此前临时创建过 `main` 分支用于同步集成结果，但现在远程 `main` 已经删除，仓库当前应以 `integration-six-layer` 为主。
-
-## 功能概览
-
-当前集成后的代码已经包含以下主要功能：
-
-- 用户注册、登录、JWT 鉴权、个人资料管理
-- 好友管理与群组管理
-- 私聊与群聊消息收发
-- 消息持久化与消息状态同步
-- WebSocket 实时通信
-- 在线状态管理
-- Bot 会话、主动模式、自动回复编排
-- 记忆缓存、长期记忆、检索增强相关能力
-- Docker、Nginx、Redis、MySQL、RabbitMQ 相关部署支持
-- 后端运行指标与可观测性相关配置
-
-## 仓库结构
-
-当前仓库已经恢复为标准可运行结构：
-
-```text
+```
 .
-├─ chatroom-client/     前端工程（Vue 3 + Vite）
-├─ chatroom-server/     后端工程（Spring Boot）
-├─ data/                技能与记忆相关种子数据
-├─ deploy/              部署与中间件辅助文件
-├─ docs/                设计文档与测试文档
-├─ test/                压测脚本与示例测试数据
-├─ docker-compose.yml   一体化部署入口
-└─ README.md
+├── chatroom-client/             前端工程 (Vue 3 + Vite)
+│   ├── src/
+│   │   ├── api/                 API 封装 (auth/bot/friend/group/message/user)
+│   │   ├── components/          Vue 组件 (16 个)
+│   │   ├── router/              路由配置 + 鉴权守卫
+│   │   ├── store/               Pinia 状态管理 (chat/contact/user)
+│   │   ├── utils/               工具函数 (websocket/auth)
+│   │   └── views/               页面 (Login/Register/Chat)
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   └── vite.config.js
+│
+├── chatroom-server/             后端工程 (Spring Boot)
+│   ├── src/main/java/com/chatroom/
+│   │   ├── common/              公共类 (Constants/Result)
+│   │   ├── config/              配置 (WebSocket/Security/CORS/MyBatisPlus/...)
+│   │   ├── controller/          控制器 (Auth/Bot/File/Friend/Group/Message/User)
+│   │   ├── exception/           自定义异常
+│   │   ├── file/                文件存储服务
+│   │   ├── handler/             全局异常处理 + 自动填充
+│   │   ├── mapper/              MyBatis-Plus Mapper (13 个)
+│   │   ├── model/               数据模型 (entity/dto/vo)
+│   │   ├── security/            安全模块 (JWT/登录保护/请求追踪)
+│   │   ├── service/             业务服务 (18 个)
+│   │   └── websocket/           WebSocket 处理器
+│   ├── src/main/resources/
+│   │   ├── sql/                 schema.sql (11 张表) + data.sql
+│   │   └── application.yml      全量配置
+│   ├── Dockerfile
+│   └── pom.xml
+│
+├── data/skills/                 AI 角色技能文件目录
+├── deploy/rabbitmq/             RabbitMQ 插件配置
+├── docs/                        项目文档
+│   ├── README.md                文档索引
+│   ├── memory-system-design.md  记忆系统设计
+│   ├── test-design.md           测试方案
+│   ├── test-results.md          测试结果
+│   └── 人员分工文档.md           分工文档
+├── test/                        测试脚本与样本数据
+│   ├── chatroom-stress-test.py  聊天室全链路压测
+│   ├── bot-stress-test.py       Bot 并发压测
+│   ├── load-test.py             负载测试
+│   ├── max-qps-test.py          最大 QPS 测试
+│   ├── test-bots.sh/.bat        Bot 集成测试
+│   ├── setup-deepseek-bots.sh/.bat  DeepSeek 一键部署
+│   ├── test-bots-ws.py          WebSocket 测试
+│   └── sample-*                 测试样本数据
+├── docker-compose.yml           五服务编排部署
+└── README.md
 ```
 
-### 目录说明
+---
 
-- `chatroom-client`
-  前端界面、路由、聊天页面、消息显示、状态管理以及 WebSocket 客户端逻辑。
+## 功能列表
 
-- `chatroom-server`
-  后端 API、认证授权、业务服务、数据持久化、WebSocket 处理、Bot 服务、记忆服务以及分布式演进相关实现。
+### 基础 IM 功能
+- 用户注册 / 登录 / JWT 鉴权 / 个人资料管理 / 账户注销
+- 好友管理：添加 / 接受 / 拒绝 / 删除 / 备注 / 在线状态
+- 群组管理：创建 / 解散 / 踢人 / 转让群主 / 公告编辑
+- 私聊与群聊消息收发
+- 消息状态追踪：已发送 → 已送达 → 已读
+- 消息撤回（2 分钟内）、永久删除、清空聊天记录
+- 消息引用回复
+- 聊天背景自定义
 
-- `data`
-  AI 角色 / 技能相关的数据与参考资料。
+### AI Bot 化身系统
+- QQ 聊天记录导入（支持 TXT / JSON / JSONL 格式）
+- 技能蒸馏：自动提取语言风格 / 情绪特征 / 表达模式
+- SKILL.md 技能文档导入与角色创建
+- 多 AI 平台支持：DeepSeek / OpenAI / 自定义 OpenAI Compatible API
+- Bot 全生命周期管理：创建 / 启动 / 停止 / 删除 / 配置
+- 流式对话：SSE 逐 Token 推送，前端打字效果
+- Bot 群组自动聊天（可配置间隔）
+- 熔断保护：连续错误自动静默
 
-- `deploy`
-  部署中间件相关辅助文件，例如 RabbitMQ 插件配置。
+### AI 记忆系统
+- 工作记忆：最近 5 轮对话 (≤3000 字符/轮)
+- 短期记忆：Redis List 滑动窗口 (最多 30 条)
+- 长期记忆：MySQL 持久化，三种类型 (summary / fact / preference)，重要性评分 1-5
+- RAG 检索：向量嵌入 + 余弦相似度 Top-K 检索
+- 自动记忆巩固：短期记忆超阈值触发 LLM 摘要归档
 
-- `docs`
-  项目设计、记忆系统设计、测试说明与测试结果文档。
+### 系统特性
+- 登录保护：IP 限流 + 失败计数 + 账号锁定 (Caffeine + Redis 双层降级)
+- 请求追踪：全链路 traceId (MDC + 响应头)
+- 文件上传：路径遍历防护 + 类型/大小校验
+- 消息可靠性：Outbox Pattern 保证最终一致性
+- 运行时指标：Micrometer + JVM 监控
+- 定时清理：历史消息 + 过期文件 + 失败发件箱记录
 
-- `test`
-  压测脚本、Bot 测试脚本、初始化脚本以及示例导入数据。
+---
 
-## 六层协作历史
+## 团队成员与分工
 
-本仓库最初按六层协作方式拆分，每一层对应一个成员分支。虽然当前工作区已经恢复成标准可运行结构，但这些分支历史仍然保留，方便后续解释小组分工、展示每个人负责的代码范围。
+| 成员 | GitHub | 邮箱 | 主要贡献 |
+|------|--------|------|----------|
+| eeeeeeeex1 | eeeeeeeex1 | 2629620478@qq.com | 项目脚手架、JWT 认证系统、LLM 客户端、RAG 检索、AI 提供商预设、Bot 消息队列 |
+| Ismweirdo | Ismweirdo | 2074437070@qq.com | WebSocket 实时通信、聊天界面、聊天记录导入、QQ 导出解析、对话缓存 |
+| Jungle-Cristo | Jungle-Cristo | jungle920@qq.com | 消息持久化、发件箱模式、登录安全保护、网关文件存储、Docker 部署 |
+| Jay7982024 | Jay7982024 | 1731614640@qq.com | 社交功能后端（好友/群组/用户）、AI 技能蒸馏、角色导入、项目文档 |
+| Yuanxiaelf | Yuanxiaelf | 1056606933@qq.com | 社交管理前端、Bot 核心引擎、Bot REST API、Bot 基准测试 |
+| kuuzzzzzzzzzz | kuuzzzzzzzzzz | kuuzzzz@163.com | 数据库设计、公共基础设施、联系人前端、长期记忆系统、Bot 测试套件 |
 
-### 六个层分支对应关系
+> 详细分工见 [docs/人员分工文档.md](docs/人员分工文档.md)
 
-- `layer-01-access-boundary`
-  接入与边界层
-
-- `layer-02-realtime-session-routing`
-  实时通信与会话路由层
-
-- `layer-03-message-persistence`
-  消息域与会话持久化层
-
-- `layer-04-social-organization`
-  社交关系与组织域
-
-- `layer-05-bot-ai-orchestration`
-  Bot 编排与 AI 执行层
-
-- `layer-06-memory-infra-governance`
-  记忆检索与基础设施治理层
-
-### 成员与层分工对应
-
-- `eeeeeeex1 <2629620478@qq.com>`
-  第 1 层，同时承担集成、README 重写、结构恢复等工作
-
-- `Ismweirdo <2074437070@qq.com>`
-  第 2 层
-
-- `Jungle-Cristo <jungle920@qq.com>`
-  第 3 层
-
-- `Jay7982024 <1731614640@qq.com>`
-  第 4 层
-
-- `Yuanxiaelf <1056606933@qq.com>`
-  第 5 层
-
-- `kuuzzzzzzzzzz <kuuzzzz@163.com>`
-  第 6 层
-
-## 架构说明
-
-从工程结构来看，当前项目主要由以下部分组成：
-
-- 前端应用：`chatroom-client`
-- 后端应用：`chatroom-server`
-- 持久化存储：MySQL
-- 缓存 / 队列支持：Redis
-- 可选 STOMP Relay 支持：RabbitMQ
-- 部署集成方式：Docker Compose + Nginx
-
-从协作视角来看，项目依然保留了原来的六层分工历史。
-
-从分布式演进视角来看，项目已经完成第一轮关键改造，例如：
-
-- 可配置的 WebSocket Broker 模式
-- 基于 Redis 的在线状态管理
-- 基于 outbox 的消息事件处理
-- 消息送达 / 已读状态链路
-- Bot 状态持久化支持
-- 后端运行指标与可观测性配置
+---
 
 ## 本地开发
 
-### 前端启动
+### 环境要求
+- JDK 17+
+- Maven 3.9+
+- Node.js 18+
+- MySQL 8.0+
+- Redis 7.0+
+- (可选) RabbitMQ 3.x
 
-安装依赖：
-
-```bash
-cd chatroom-client
-npm install
-```
-
-启动开发环境：
-
-```bash
-npm run dev
-```
-
-构建前端：
+### 数据库初始化
 
 ```bash
-npm run build
+mysql -u root -p < chatroom-server/src/main/resources/sql/schema.sql
+mysql -u root -p < chatroom-server/src/main/resources/sql/data.sql
 ```
 
 ### 后端启动
 
-后端打包：
-
 ```bash
 cd chatroom-server
-mvn -DskipTests package
-```
-
-本地运行后端：
-
-```bash
+# 修改 src/main/resources/application.yml 中的数据源/Redis 连接信息
 mvn spring-boot:run
 ```
 
-根据运行环境不同，你也可以通过环境变量覆盖以下配置：
+可通过环境变量覆盖配置：
 
-- MySQL 主机、端口、库名、用户名、密码
-- Redis 主机与端口
-- WebSocket Broker 模式
-- STOMP Relay 主机与端口
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `MYSQL_HOST` | MySQL 主机 | localhost |
+| `MYSQL_PORT` | MySQL 端口 | 3306 |
+| `MYSQL_DATABASE` | 数据库名 | chatroom |
+| `MYSQL_USERNAME` | 数据库用户 | root |
+| `MYSQL_PASSWORD` | 数据库密码 | root123 |
+| `REDIS_HOST` | Redis 主机 | localhost |
+| `REDIS_PORT` | Redis 端口 | 6379 |
+| `CHATROOM_WEBSOCKET_MODE` | WebSocket 模式 | simple (内置) / relay (RabbitMQ) |
 
-## Docker 部署
-
-仓库中已经包含 `docker-compose.yml` 以及相关部署文件，可以用于一体化启动。
-
-涉及的主要服务与配置包括：
-
-- 前端容器
-- 后端容器
-- MySQL
-- Redis
-- RabbitMQ 相关配置
-- Nginx 前端服务配置
-
-因此，当前 `integration-six-layer` 分支既可以用于本地手动运行，也适合用于容器化的联合部署实验。
-
-## 构建验证状态
-
-当前 `integration-six-layer` 分支已经在本地完成过以下验证：
-
-后端构建：
-
-```bash
-cd chatroom-server
-mvn -DskipTests package
-```
-
-前端构建：
+### 前端启动
 
 ```bash
 cd chatroom-client
 npm install
-npm run build
+npm run dev
 ```
 
-这说明当前分支不是单纯的分层展示分支，而是已经恢复成了可构建、可继续开发的集成工程分支。
+### 构建
 
-## 文档与测试资源
+```bash
+# 后端
+cd chatroom-server && mvn -DskipTests package
 
-仓库中还保留了较完整的设计文档与测试脚本，主要位于：
+# 前端
+cd chatroom-client && npm run build
+```
 
-- `docs/README.md`
-- `docs/memory-system-design.md`
-- `docs/test-design.md`
-- `docs/test-results.md`
-- `test/`
+---
 
-这些内容可以用于：
+## Docker 部署
 
-- 项目介绍
-- 架构说明
-- 记忆系统说明
-- 压测与测试展示
-- 课程答辩或小组汇报材料准备
+一条命令启动全部服务：
 
-## 后续分支使用建议
+```bash
+docker-compose up -d
+```
 
-后续建议采用如下方式继续协作：
+启动 5 个容器服务：
 
-- 将 `integration-six-layer` 作为默认集成分支
-- 新需求或优化先在各自功能分支开发
-- 验证通过后再合并回 `integration-six-layer`
-- 六个 `layer-*` 分支继续保留，用于展示成员责任边界和 contribution 来源
+| 服务 | 端口 | 说明 |
+|------|------|------|
+| mysql | 3306 | MySQL 8.4，含健康检查 |
+| redis | 6379 | Redis 7 Alpine，含健康检查 |
+| rabbitmq | 5672/61613/15672 | RabbitMQ 3 Management，STOMP 插件 |
+| chatroom-server | 8080 | Spring Boot 后端 |
+| chatroom-client | 80 | Nginx 前端，反向代理 API + WebSocket |
 
-如果后续项目需要更正式的发布流程，也可以再从 `integration-six-layer` 单独切出发布分支。
+依赖关系：chatroom-server 等待 mysql / redis / rabbitmq 健康检查通过后启动，chatroom-client 等待 chatroom-server 后启动。
 
-## 重要说明
+---
 
-原始的“六个顶层文件夹协作视图”已经从当前工作区移除，因为这个分支已经被恢复成标准可运行结构。
+## API 概览
 
-但是以下内容仍然保留：
+| 模块 | 路径前缀 | 端点数 | 说明 |
+|------|----------|--------|------|
+| 认证 | `/api/auth` | 2 | 注册 / 登录 |
+| 用户 | `/api/users` | 4 | 资料查询修改 / 搜索 / 注销 |
+| 好友 | `/api/friends` | 7 | 添加 / 接受 / 拒绝 / 删除 / 列表 / 备注 |
+| 群组 | `/api/groups` | 7 | 创建 / 列表 / 详情 / 解散 / 踢人 / 转让 / 公告 |
+| 消息 | `/api/messages` | 7 | 私聊历史 / 群聊历史 / 撤回 / 删除 / 清空 / 上下文 |
+| Bot | `/api/bots` | 20+ | CRUD / 配置 / 导入 / 流式 / 基准测试 / 活跃模式 |
+| 文件 | `/api/files` | 3 | 上传 / 下载 / 公开访问 |
 
-- 六个协作层分支仍然存在
-- 每个人的历史提交记录仍然保留在 Git 中
-- 后续查看 contribution 时，应优先以 `integration-six-layer` 为主
+---
 
-## 总结
+## 数据库设计
 
-`integration-six-layer` 现在是仓库中最适合继续开发和展示的小组主分支。
+共 11 张表：
 
-它同时保留了：
+| 表名 | 说明 |
+|------|------|
+| `users` | 用户表（含 is_bot 区分人类和AI） |
+| `friends` | 好友关系表（双向唯一索引） |
+| `groups` | 群组表 |
+| `group_members` | 群组成员表 |
+| `messages` | 消息表（私聊/群聊/引用/状态） |
+| `message_outbox` | 发件箱表（事件驱动异步通知） |
+| `bot_skills` | Bot 技能配置表（SystemPrompt/情绪/风格） |
+| `bot_active_modes` | Bot 活跃模式表（群组自动发言） |
+| `group_bot_auto_chat` | 群组-Bot 自动聊天关联 |
+| `bot_long_term_memory` | Bot 长期记忆表（summary/fact/preference） |
+| `conversation_embeddings` | 会话嵌入向量表（RAG 检索） |
 
-- 六人协作分工历史
-- 分层分支责任结构
-- 已恢复的可运行工程布局
-- 后续继续开发、联调、测试与展示的基础
+---
+
+## 测试
+
+### 压力测试
+
+```bash
+# 聊天室全链路压测 (注册→登录→WebSocket→消息收发)
+python test/chatroom-stress-test.py
+
+# Bot 并发压测
+python test/bot-stress-test.py
+
+# 渐进式负载测试
+python test/load-test.py
+
+# 最大 QPS 测试
+python test/max-qps-test.py
+```
+
+### Bot 集成测试
+
+```bash
+# Linux / Mac
+bash test/test-bots.sh
+bash test/setup-deepseek-bots.sh
+
+# Windows
+test/test-bots.bat
+test/setup-deepseek-bots.bat
+```
+
+---
+
+## 许可证
+
+本项目为教育用途的课程项目。
