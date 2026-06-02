@@ -62,11 +62,10 @@ CREATE TABLE IF NOT EXISTS messages (
     INDEX idx_private_query (sender_id, target_id, created_at),
     INDEX idx_created_at (created_at),
     INDEX idx_reply (reply_to_id),
+    delivered_at DATETIME NULL,
+    read_at DATETIME NULL,
     UNIQUE KEY uk_client_msg (client_message_id)
 );
-
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at DATETIME NULL;
-ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at DATETIME NULL;
 
 CREATE TABLE IF NOT EXISTS bot_skills (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

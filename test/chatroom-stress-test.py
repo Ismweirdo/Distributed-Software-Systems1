@@ -46,7 +46,7 @@ except ImportError:
 BASE_API = "http://localhost:8080/api"
 WS_URL = "ws://localhost:8080/ws/chat"
 
-DEEPSEEK_KEY = os.environ.get("BOT_API_KEY", "sk-6fe13faf47894dbdae05df6dd87f6cf4")
+DEEPSEEK_KEY = os.environ.get("BOT_API_KEY", "")
 DEEPSEEK_ENDPOINT = os.environ.get("BOT_API_ENDPOINT", "https://api.deepseek.com/v1/chat/completions")
 DEEPSEEK_MODEL = os.environ.get("BOT_API_MODEL", "deepseek-chat")
 

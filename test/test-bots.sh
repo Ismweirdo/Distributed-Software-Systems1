@@ -28,18 +28,40 @@ login() {
 
 # ---------- step 1: server health check ----------
 echo "==================== Step 1: Server Health Check ===================="
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/auth/login" -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"username":"alice","password":"123456"}')
+# Health check via actuator endpoint
+HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/actuator/health")
 if [ "$HEALTH" = "200" ]; then
     pass "Server is running"
 else
-    fail "Server is not running (HTTP $HEALTH) — start the server first"
+    # Try login as fallback
+    HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/auth/login" -X POST \
+        -H "Content-Type: application/json" \
+        -d '{"username":"alice","password":"123456"}')
+    if [ "$HEALTH" = "200" ]; then
+        pass "Server is running"
+    else
+        fail "Server is not running (HTTP $HEALTH) — start the server first"
+        exit 1
+    fi
+fi
+
+# Register test user (auto-generated username)
+echo -n "Registering test user... "
+REG_RESP=$(curl -s -X POST "$BASE_URL/auth/register" \
+    -H "Content-Type: application/json" \
+    -d '{"nickname":"shellbot","password":"test123456"}')
+USERNAME=$(echo "$REG_RESP" | grep -o '"username":"[^"]*"' | head -1 | sed 's/"username":"//;s/"//')
+REG_CODE=$(echo "$REG_RESP" | grep -o '"code":[0-9]*' | head -1 | sed 's/"code"://')
+if [ "$REG_CODE" = "200" ] && [ -n "$USERNAME" ]; then
+    pass "Registered user: $USERNAME"
+else
+    echo "Registration response: $REG_RESP"
+    fail "Registration failed"
     exit 1
 fi
 
 # Login
-TOKEN=$(login "alice" "123456")
+TOKEN=$(login "$USERNAME" "test123456")
 if [ -z "$TOKEN" ]; then
     fail "Login failed"
     exit 1

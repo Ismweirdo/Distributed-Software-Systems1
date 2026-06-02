@@ -17,6 +17,12 @@ except ImportError:
     print("Install websockets: pip install websockets")
     sys.exit(1)
 
+try:
+    import aiohttp
+except ImportError:
+    print("Install aiohttp: pip install aiohttp")
+    sys.exit(1)
+
 WS_URL = "ws://localhost:8080/ws/chat"
 API_URL = "http://localhost:3000"
 BASE_API = "http://localhost:8080/api"
@@ -25,7 +31,6 @@ results = {"sent": 0, "received": 0, "errors": 0, "bot_replies": 0, "latencies":
 
 
 async def login(username, password):
-    import aiohttp
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{BASE_API}/auth/login",
@@ -39,7 +44,7 @@ async def connect_and_chat(token, bot_id, num_messages):
     """Connect via WebSocket, send messages to a bot, track replies."""
     ws_url = f"{WS_URL}?token={token}"
     try:
-        async with websockets.connect(ws_url, extra_headers={
+        async with websockets.connect(ws_url, additional_headers={
             "Origin": "http://localhost:3000"
         }) as ws:
             # Wait for connection
@@ -89,16 +94,29 @@ async def main():
     print(f"Bots: {args.bots}, Messages per bot: {args.messages}")
     print()
 
-    # Login
+    # Register or login test user
+    token = None
+    user_name = f"wstest_{uuid.uuid4().hex[:4]}"
     try:
-        token = await login("alice", "123456")
-        print(f"[OK] Logged in as alice")
+        async with aiohttp.ClientSession() as session:
+            # Register (server auto-generates username, token returned directly)
+            async with session.post(
+                f"{BASE_API}/auth/register",
+                json={"nickname": user_name, "password": "123456"}
+            ) as resp:
+                data = await resp.json()
+                if data.get("code") == 200:
+                    token = data["data"]["token"]
+                    print(f"[OK] Registered as {user_name} (auto-username: {data['data']['user']['username']})")
+
+            if not token:
+                print(f"[FAIL] Cannot register or login")
+                return
     except Exception as e:
-        print(f"[FAIL] Login failed: {e}")
+        print(f"[FAIL] Setup failed: {e}")
         return
 
     # Get bot list
-    import aiohttp
     bot_ids = []
     async with aiohttp.ClientSession() as session:
         async with session.get(

@@ -13,7 +13,7 @@ Usage:
   python bot-stress-test.py --quick      # 快速模式 (5 Bot)
   python bot-stress-test.py --blast      # 爆破模式 (100 Bot)
 """
-import asyncio, json, uuid, time, argparse, sys, statistics, random
+import asyncio, json, uuid, time, argparse, sys, statistics, random, os
 from dataclasses import dataclass, field
 
 try:
@@ -29,7 +29,7 @@ BASE = "http://localhost:8080/api"
 WS   = "ws://localhost:8080/ws/chat"
 PASS = "test123456"
 
-DEEPSEEK_KEY = "sk-6fe13faf47894dbdae05df6dd87f6cf4"
+DEEPSEEK_KEY = os.environ.get("BOT_API_KEY", "")
 DEEPSEEK_ENDPOINT = "https://api.deepseek.com/v1/chat/completions"
 DEEPSEEK_MODEL = "deepseek-chat"
 

@@ -38,6 +38,17 @@ BASE_API = "http://localhost:8080/api"
 WS_URL = "ws://localhost:8080/ws/chat"
 PASS = "test123456"
 
+# STOMP protocol helpers
+def stomp_connect(token):
+    return f"CONNECT\naccept-version:1.1,1.2\nhost:localhost\nlogin:{token}\n\n\0"
+
+def stomp_sub(dest, sid="0"):
+    return f"SUBSCRIBE\nid:{sid}\ndestination:{dest}\n\n\0"
+
+def stomp_send(dest, body_dict):
+    body = json.dumps(body_dict, ensure_ascii=False)
+    return f"SEND\ndestination:{dest}\ncontent-type:application/json\ncontent-length:{len(body.encode())}\n\n{body}\0"
+
 # ============ Stats ============
 @dataclass
 class Result:
@@ -183,9 +194,11 @@ async def L2_ws_connections(seq_concurrency: int, token: str) -> Result:
             async with asyncio.timeout(8):
                 ws = await websockets.connect(
                     f"{WS_URL}?token={token}",
-                    extra_headers={"Origin": "http://localhost:3000"},
+                    additional_headers={"Origin": "http://localhost:3000"},
                     ping_interval=None, close_timeout=2,
                 )
+                # Send STOMP CONNECT frame
+                await ws.send(stomp_connect(token))
                 raw = await asyncio.wait_for(ws.recv(), timeout=5)
                 ok = (isinstance(raw, bytes) and b"CONNECTED" in raw) or \
                      (isinstance(raw, str) and "CONNECTED" in raw)
@@ -252,16 +265,17 @@ async def L3_msg_throughput(token: str, user_id: int, conn_count: int, msgs_per:
             async with asyncio.timeout(20):
                 ws = await websockets.connect(
                     f"{WS_URL}?token={token}",
-                    extra_headers={"Origin": "http://localhost:3000"},
+                    additional_headers={"Origin": "http://localhost:3000"},
                     ping_interval=None, close_timeout=2,
                 )
+                # Send STOMP CONNECT
+                await ws.send(stomp_connect(token))
                 raw = await ws.recv()
                 if b"CONNECTED" not in (raw if isinstance(raw, bytes) else raw.encode()):
                     return 0, []
 
                 # Subscribe
-                sub = f"SUBSCRIBE\nid:s{idx}\ndestination:/user/queue/private/chat\n\n\0"
-                await ws.send(sub)
+                await ws.send(stomp_sub("/user/queue/private/chat", f"s{idx}"))
 
                 # Send messages rapidly
                 for i in range(msgs_per):
@@ -331,14 +345,16 @@ async def L4_bot_concurrency(token: str, user_id: int, bot_ids: list, msgs_per_b
         try:
             ws = await websockets.connect(
                 f"{WS_URL}?token={token}",
-                extra_headers={"Origin": "http://localhost:3000"},
+                additional_headers={"Origin": "http://localhost:3000"},
                 ping_interval=None, close_timeout=2,
             )
+            # Send STOMP CONNECT
+            await ws.send(stomp_connect(token))
             raw = await asyncio.wait_for(ws.recv(), timeout=5)
             if b"CONNECTED" not in (raw if isinstance(raw, bytes) else raw.encode()):
                 return 0, 0, []
 
-            await ws.send(f"SUBSCRIBE\nid:bot\nndestination:/user/queue/private/chat\n\n\0")
+            await ws.send(stomp_sub("/user/queue/private/chat", "bot"))
 
             # Recv loop (fire and forget)
             async def recv():

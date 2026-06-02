@@ -45,8 +45,8 @@ public class SecurityConfig {
                 .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated()
             )
-            .addFilterBefore(requestTraceFilter, JwtAuthenticationFilter.class)
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(requestTraceFilter, JwtAuthenticationFilter.class)
             .headers(headers -> headers.frameOptions(frame -> frame.disable())); // for H2 console
 
         return http.build();
