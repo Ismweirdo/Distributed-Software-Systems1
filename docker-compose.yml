@@ -1,0 +1,98 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: chatroom-mysql
+    environment:
+      MYSQL_DATABASE: chatroom
+      MYSQL_ROOT_PASSWORD: root123
+    command:
+      - --default-authentication-plugin=mysql_native_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: chatroom-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: chatroom-rabbitmq
+    ports:
+      - "5672:5672"
+      - "61613:61613"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - ./deploy/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  chatroom-server:
+    build:
+      context: ./chatroom-server
+    container_name: chatroom-server
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: chatroom
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: root123
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CHATROOM_WEBSOCKET_MODE: relay
+      STOMP_RELAY_HOST: rabbitmq
+      STOMP_RELAY_PORT: 61613
+      STOMP_RELAY_CLIENT_LOGIN: guest
+      STOMP_RELAY_CLIENT_PASSCODE: guest
+      STOMP_RELAY_SYSTEM_LOGIN: guest
+      STOMP_RELAY_SYSTEM_PASSCODE: guest
+      STOMP_RELAY_VHOST: /
+      CHATROOM_GATEWAY_ENABLED: true
+      CHATROOM_GATEWAY_API_PREFIX: /api
+      CHATROOM_GATEWAY_WS_PREFIX: /ws
+      CHATROOM_GATEWAY_PUBLIC_FILES_PREFIX: /api/files/public
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  chatroom-client:
+    build:
+      context: ./chatroom-client
+    container_name: chatroom-client
+    ports:
+      - "80:80"
+    depends_on:
+      - chatroom-server
+
+volumes:
+  mysql_data:
+  redis_data:
