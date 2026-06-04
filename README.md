@@ -39,7 +39,7 @@
 ├── chatroom-client/             前端工程 (Vue 3 + Vite)
 │   ├── src/
 │   │   ├── api/                 API 封装 (auth/bot/friend/group/message/user)
-│   │   ├── components/          Vue 组件 (16 个)
+│   │   ├── components/          Vue 组件 (13 个)
 │   │   ├── router/              路由配置 + 鉴权守卫
 │   │   ├── store/               Pinia 状态管理 (chat/contact/user)
 │   │   ├── utils/               工具函数 (websocket/auth)
@@ -57,10 +57,10 @@
 │   │   ├── exception/           自定义异常
 │   │   ├── file/                文件存储服务
 │   │   ├── handler/             全局异常处理 + 自动填充
-│   │   ├── mapper/              MyBatis-Plus Mapper (13 个)
+│   │   ├── mapper/              MyBatis-Plus Mapper (11 个)
 │   │   ├── model/               数据模型 (entity/dto/vo)
 │   │   ├── security/            安全模块 (JWT/登录保护/请求追踪)
-│   │   ├── service/             业务服务 (18 个)
+│   │   ├── service/             业务服务 (21 个 + 5 impl)
 │   │   └── websocket/           WebSocket 处理器
 │   ├── src/main/resources/
 │   │   ├── sql/                 schema.sql (11 张表) + data.sql
@@ -68,7 +68,7 @@
 │   ├── Dockerfile
 │   └── pom.xml
 │
-├── data/skills/                 AI 角色技能文件目录
+├── chatroom-server/data/skills/  AI 角色技能文件目录
 ├── deploy/rabbitmq/             RabbitMQ 插件配置
 ├── docs/                        项目文档
 │   ├── 需求规约.md               需求规约
@@ -78,11 +78,15 @@
 ├── test/                        测试脚本与样本数据
 │   ├── chatroom-stress-test.py  聊天室全链路压测
 │   ├── bot-stress-test.py       Bot 并发压测
-│   ├── load-test.py             负载测试
+│   ├── load-test.py             渐进式负载测试
 │   ├── max-qps-test.py          最大 QPS 测试
-│   ├── test-bots.sh/.bat        Bot 集成测试
+│   ├── multi-user-bot-test.py   多用户×Bot 梯度测试
+│   ├── ai-module-test.py        AI 模块深度测试
+│   ├── deep-ai-test.py          AI 深度盲区测试
+│   ├── test-bots.py             Bot 集成测试 (Python)
+│   ├── test-bots.sh/.bat        Bot 集成测试 (Shell)
+│   ├── test-bots-ws.py          WebSocket 连通性测试
 │   ├── setup-deepseek-bots.sh/.bat  DeepSeek 一键部署
-│   ├── test-bots-ws.py          WebSocket 测试
 │   └── sample-*                 测试样本数据
 ├── docker-compose.yml           五服务编排部署
 └── README.md
@@ -228,13 +232,13 @@ docker-compose up -d
 
 | 模块 | 路径前缀 | 端点数 | 说明 |
 |------|----------|--------|------|
-| 认证 | `/api/auth` | 2 | 注册 / 登录 |
-| 用户 | `/api/users` | 4 | 资料查询修改 / 搜索 / 注销 |
+| 认证 | `/api/auth` | 3 | 注册 / 登录 / 当前用户 |
+| 用户 | `/api/users` | 5 | 资料查询修改 / 搜索 / 头像上传 / 注销 |
 | 好友 | `/api/friends` | 7 | 添加 / 接受 / 拒绝 / 删除 / 列表 / 备注 |
-| 群组 | `/api/groups` | 7 | 创建 / 列表 / 详情 / 解散 / 踢人 / 转让 / 公告 |
-| 消息 | `/api/messages` | 7 | 私聊历史 / 群聊历史 / 撤回 / 删除 / 清空 / 上下文 |
-| Bot | `/api/bots` | 20+ | CRUD / 配置 / 导入 / 流式 / 基准测试 / 活跃模式 |
-| 文件 | `/api/files` | 3 | 上传 / 下载 / 公开访问 |
+| 群组 | `/api/groups` | 11 | 创建 / 列表 / 详情 / 成员管理 / 解散 / 退出 / 转让 / Bot 自动聊天 |
+| 消息 | `/api/messages` | 6 | 私聊历史 / 群聊历史 / 撤回 / 永久删除 / 清空 / 上下文 |
+| Bot | `/api/bots` | 36 | CRUD / 配置 / 导入 / 流式 / 基准测试 / 活跃模式 / RAG / Skill / QQ 导入 |
+| 文件 | `/api/files` | 4 | 上传 / 下载 / 公开访问 |
 
 ---
 
