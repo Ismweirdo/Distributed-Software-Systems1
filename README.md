@@ -71,11 +71,10 @@
 ├── data/skills/                 AI 角色技能文件目录
 ├── deploy/rabbitmq/             RabbitMQ 插件配置
 ├── docs/                        项目文档
-│   ├── README.md                文档索引
-│   ├── memory-system-design.md  记忆系统设计
-│   ├── test-design.md           测试方案
-│   ├── test-results.md          测试结果
-│   └── 人员分工文档.md           分工文档
+│   ├── 需求规约.md               需求规约
+│   ├── 概要设计文档.md           概要设计文档
+│   ├── 测试报告.md               测试报告
+│   └── 人员分工文档.md           人员分工
 ├── test/                        测试脚本与样本数据
 │   ├── chatroom-stress-test.py  聊天室全链路压测
 │   ├── bot-stress-test.py       Bot 并发压测
