@@ -264,74 +264,106 @@ public class BotManager {
         return result;
     }
 
-    /** Handle message with streaming callback. onToken receives each token. Returns full text. */
-    public String handleBotMessageStream(Long botUserId, Long senderId, String senderName, String content,
-                                          java.util.function.Consumer<String> onToken) {
+    /**
+     * Handle message with streaming callback (async, non-blocking I/O).
+     * <p>
+     * {@code onToken} is called from the HttpClient's I/O thread as each SSE token
+     * arrives — no application thread is blocked reading the response stream.
+     * The returned CompletableFuture completes with the full text when the stream ends.
+     */
+    public CompletableFuture<String> handleBotMessageStreamAsync(Long botUserId, Long senderId,
+                                                                  String senderName, String content,
+                                                                  java.util.function.Consumer<String> onToken) {
         BotSkill skill = getBotSkill(botUserId);
-        if (skill == null) return null;
+        if (skill == null) return CompletableFuture.completedFuture(null);
 
         // Check cache for streaming (normalize content to improve hit rate)
         String cacheKey = botUserId + ":" + normalizeContent(content);
         CacheEntry<String> cached = responseCache.get(cacheKey);
         if (cached != null && System.currentTimeMillis() < cached.expiresAt) {
             for (char c : cached.value.toCharArray()) onToken.accept(String.valueOf(c));
-            return cached.value;
+            return CompletableFuture.completedFuture(cached.value);
         }
 
         botSemaphores.computeIfAbsent(botUserId, k -> new Semaphore(Constants.BOT_MAX_CONCURRENCY));
-        if (queueService != null && queueService.isCircuitOpen(botUserId, Constants.BOT_CIRCUIT_BREAK_SILENCE_MS)) return null;
+        if (queueService != null && queueService.isCircuitOpen(botUserId, Constants.BOT_CIRCUIT_BREAK_SILENCE_MS))
+            return CompletableFuture.completedFuture(null);
 
         Semaphore sem = botSemaphores.get(botUserId);
         if (!sem.tryAcquire()) {
             if (queueService != null) queueService.enqueue(botUserId, senderId, senderName, content);
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
 
-        try {
-            List<Map<String, String>> messages = buildContext(botUserId, senderId, senderName, content);
-            String model = skill.getModel() != null ? skill.getModel() : defaultModel;
-            String reply = llmApiClient.chatStream(
-                    skill.getApiEndpoint(), skill.getApiKey(), model, messages,
-                    effectiveMaxTokens(skill),
-                    skill.getTemperature() != null ? skill.getTemperature() : Constants.BOT_DEFAULT_TEMPERATURE,
-                    onToken);
+        // Build context (sync — fast)
+        List<Map<String, String>> messages = buildContext(botUserId, senderId, senderName, content);
+        String model = skill.getModel() != null ? skill.getModel() : defaultModel;
 
-            if (reply != null && !reply.isEmpty()) {
-                skill.setErrorCount(0);
-                skill.setLastActiveAt(LocalDateTime.now());
-                skill.setStatus(Constants.BOT_STATUS_ACTIVE);
-                responseCache.put(cacheKey, new CacheEntry<>(reply, System.currentTimeMillis() + 180_000));
-                cacheConversationExchange(botUserId, senderId, senderName, content, reply);
-            } else {
-                recordError(botUserId, skill);
-            }
-            botSkillMapper.updateById(skill);
-            return reply;
-        } catch (Exception e) {
-            log.error("Bot {} stream call failed", botUserId, e);
-            recordError(botUserId, skill);
-            botSkillMapper.updateById(skill);
-            return null;
-        } finally {
-            sem.release();
-            processQueue(botUserId);
+        return llmApiClient.chatStreamAsync(
+                skill.getApiEndpoint(), skill.getApiKey(), model, messages,
+                effectiveMaxTokens(skill),
+                skill.getTemperature() != null ? skill.getTemperature() : Constants.BOT_DEFAULT_TEMPERATURE,
+                onToken)
+                .thenApply(reply -> {
+                    if (reply != null && !reply.isEmpty()) {
+                        skill.setErrorCount(0);
+                        skill.setLastActiveAt(LocalDateTime.now());
+                        skill.setStatus(Constants.BOT_STATUS_ACTIVE);
+                        responseCache.put(cacheKey, new CacheEntry<>(reply, System.currentTimeMillis() + 180_000));
+                        cacheConversationExchange(botUserId, senderId, senderName, content, reply);
+                    } else {
+                        recordError(botUserId, skill);
+                    }
+                    botSkillMapper.updateById(skill);
+                    return reply;
+                })
+                .exceptionally(e -> {
+                    log.error("Bot {} async stream call failed", botUserId, e);
+                    recordError(botUserId, skill);
+                    botSkillMapper.updateById(skill);
+                    return null;
+                })
+                .whenComplete((reply, ex) -> {
+                    sem.release();
+                    processQueue(botUserId);
+                });
+    }
+
+    /** Handle message with streaming callback. onToken receives each token. Returns full text.
+     *  Synchronous wrapper — prefer {@link #handleBotMessageStreamAsync} for non-blocking usage. */
+    public String handleBotMessageStream(Long botUserId, Long senderId, String senderName, String content,
+                                          java.util.function.Consumer<String> onToken) {
+        try {
+            return handleBotMessageStreamAsync(botUserId, senderId, senderName, content, onToken).join();
+        } catch (java.util.concurrent.CompletionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            throw new RuntimeException(cause.getMessage(), cause);
         }
     }
 
     /**
-     * Handle an incoming message targeting a bot. Called by the WebSocket handler.
-     * Returns the bot's reply message text, or null if the bot is in circuit-break state.
+     * Handle an incoming message targeting a bot (async, non-blocking).
+     * <p>
+     * The returned CompletableFuture completes on an HttpClient I/O thread when the
+     * LLM response is available — no application thread is blocked during the LLM
+     * wait time (2-5s).  Callers should use {@code .thenAccept()} to push the reply.
+     * <p>
+     * Semaphore, circuit breaker, and cache checks are performed synchronously
+     * before returning the future.  State updates (error count, cache, memory
+     * consolidation) happen inside the async chain.
      */
-    public String handleBotMessage(Long botUserId, Long senderId, String senderName, String content) {
+    public CompletableFuture<String> handleBotMessageAsync(Long botUserId, Long senderId,
+                                                            String senderName, String content) {
         BotSkill skill = getBotSkill(botUserId);
-        if (skill == null) return null;
+        if (skill == null) return CompletableFuture.completedFuture(null);
 
         // Lazy-init semaphore (in-memory, survives single node)
         botSemaphores.computeIfAbsent(botUserId, k -> new Semaphore(Constants.BOT_MAX_CONCURRENCY));
 
         // Circuit breaker check (Redis-backed if available)
         if (queueService != null && queueService.isCircuitOpen(botUserId, Constants.BOT_CIRCUIT_BREAK_SILENCE_MS)) {
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
 
         Semaphore sem = botSemaphores.get(botUserId);
@@ -340,47 +372,67 @@ public class BotManager {
             if (queueService != null) {
                 queueService.enqueue(botUserId, senderId, senderName, content);
             }
-            return null;
+            return CompletableFuture.completedFuture(null);
         }
 
-        try {
-            // Check LLM response cache (3 min TTL, normalized content key)
-            String cacheKey = botUserId + ":" + normalizeContent(content);
-            CacheEntry<String> cached = responseCache.get(cacheKey);
-            if (cached != null && System.currentTimeMillis() < cached.expiresAt) {
-                sem.release();
-                processQueue(botUserId);
-                return cached.value;
-            }
-
-            List<Map<String, String>> messages = buildContext(botUserId, senderId, senderName, content);
-            String model = skill.getModel() != null ? skill.getModel() : defaultModel;
-            String reply = llmApiClient.chat(
-                    skill.getApiEndpoint(), skill.getApiKey(), model,
-                    messages,
-                    effectiveMaxTokens(skill),
-                    skill.getTemperature() != null ? skill.getTemperature() : Constants.BOT_DEFAULT_TEMPERATURE);
-
-            if (reply != null) {
-                skill.setErrorCount(0);
-                skill.setLastActiveAt(LocalDateTime.now());
-                skill.setStatus(Constants.BOT_STATUS_ACTIVE);
-                responseCache.put(cacheKey, new CacheEntry<>(reply, System.currentTimeMillis() + 180_000));
-                cacheConversationExchange(botUserId, senderId, senderName, content, reply);
-            } else {
-                recordError(botUserId, skill);
-            }
-            botSkillMapper.updateById(skill);
-            return reply;
-
-        } catch (Exception e) {
-            log.error("Bot {} API call failed", botUserId, e);
-            recordError(botUserId, skill);
-            botSkillMapper.updateById(skill);
-            return null;
-        } finally {
+        // Check LLM response cache (3 min TTL, normalized content key)
+        String cacheKey = botUserId + ":" + normalizeContent(content);
+        CacheEntry<String> cached = responseCache.get(cacheKey);
+        if (cached != null && System.currentTimeMillis() < cached.expiresAt) {
             sem.release();
             processQueue(botUserId);
+            return CompletableFuture.completedFuture(cached.value);
+        }
+
+        // Build context (sync — fast, mostly Redis/DB reads)
+        List<Map<String, String>> messages = buildContext(botUserId, senderId, senderName, content);
+        String model = skill.getModel() != null ? skill.getModel() : defaultModel;
+
+        // Async LLM call: the thread is released here, I/O handled by HttpClient
+        return llmApiClient.chatAsync(
+                skill.getApiEndpoint(), skill.getApiKey(), model,
+                messages,
+                effectiveMaxTokens(skill),
+                skill.getTemperature() != null ? skill.getTemperature() : Constants.BOT_DEFAULT_TEMPERATURE)
+                .thenApply(reply -> {
+                    if (reply != null) {
+                        skill.setErrorCount(0);
+                        skill.setLastActiveAt(LocalDateTime.now());
+                        skill.setStatus(Constants.BOT_STATUS_ACTIVE);
+                        responseCache.put(cacheKey, new CacheEntry<>(reply, System.currentTimeMillis() + 180_000));
+                        cacheConversationExchange(botUserId, senderId, senderName, content, reply);
+                    } else {
+                        recordError(botUserId, skill);
+                    }
+                    botSkillMapper.updateById(skill);
+                    return reply;
+                })
+                .exceptionally(e -> {
+                    log.error("Bot {} async API call failed", botUserId, e);
+                    recordError(botUserId, skill);
+                    botSkillMapper.updateById(skill);
+                    return null;
+                })
+                .whenComplete((reply, ex) -> {
+                    sem.release();
+                    processQueue(botUserId);
+                });
+    }
+
+    /**
+     * Handle an incoming message targeting a bot. Called by the WebSocket handler.
+     * Returns the bot's reply message text, or null if the bot is in circuit-break state.
+     * <p>
+     * Synchronous wrapper around {@link #handleBotMessageAsync} — kept for backward
+     * compatibility.  New callers should prefer the async variant.
+     */
+    public String handleBotMessage(Long botUserId, Long senderId, String senderName, String content) {
+        try {
+            return handleBotMessageAsync(botUserId, senderId, senderName, content).join();
+        } catch (java.util.concurrent.CompletionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            throw new RuntimeException(cause.getMessage(), cause);
         }
     }
 
@@ -403,12 +455,13 @@ public class BotManager {
         String senderName = (String) next.get("senderName");
         String content = (String) next.get("content");
 
-        java.util.concurrent.CompletableFuture.runAsync(() -> {
-            String reply = handleBotMessage(botUserId, senderId, senderName, content);
-            if (reply != null && !reply.trim().isEmpty()) {
-                pushBotReply(botUserId, senderId, reply, Constants.MSG_TYPE_PRIVATE);
-            }
-        }, botTaskExecutor);
+        // Async: the I/O wait happens on HttpClient threads, not botTaskExecutor
+        handleBotMessageAsync(botUserId, senderId, senderName, content)
+                .thenAccept(reply -> {
+                    if (reply != null && !reply.trim().isEmpty()) {
+                        pushBotReply(botUserId, senderId, reply, Constants.MSG_TYPE_PRIVATE);
+                    }
+                });
     }
 
     /** Push a bot reply, auto-splitting long messages into sequential chunks. */
@@ -1043,7 +1096,8 @@ public class BotManager {
         return Map.of("activeBots", list);
     }
 
-    /** Scheduled task: poll Redis queues for pending messages (handles restarted messages). */
+    /** Scheduled task: poll Redis queues for pending messages (handles restarted messages).
+     *  Now uses async LLM calls — the polling loop thread is never blocked on LLM I/O. */
     @Scheduled(fixedDelay = 5_000)
     public void pollRedisQueues() {
         if (queueService == null) return;
@@ -1056,12 +1110,13 @@ public class BotManager {
                         Long senderId = (Long) msg.get("senderId");
                         String senderName = (String) msg.get("senderName");
                         String content = (String) msg.get("content");
-                        java.util.concurrent.CompletableFuture.runAsync(() -> {
-                            String reply = handleBotMessage(botUserId, senderId, senderName, content);
-                            if (reply != null && !reply.trim().isEmpty()) {
-                                pushBotReply(botUserId, senderId, reply, Constants.MSG_TYPE_PRIVATE);
-                            }
-                        }, botTaskExecutor);
+                        // Async: I/O handled by HttpClient, not botTaskExecutor
+                        handleBotMessageAsync(botUserId, senderId, senderName, content)
+                                .thenAccept(reply -> {
+                                    if (reply != null && !reply.trim().isEmpty()) {
+                                        pushBotReply(botUserId, senderId, reply, Constants.MSG_TYPE_PRIVATE);
+                                    }
+                                });
                     }
                 } catch (Exception e) {
                     // Skip individual bot failures

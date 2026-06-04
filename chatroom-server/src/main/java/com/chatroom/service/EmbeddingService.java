@@ -1,27 +1,38 @@
 package com.chatroom.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 /**
  * Calls LLM provider's embedding API to generate vector embeddings.
  * Uses OpenAI-compatible /v1/embeddings endpoint.
- * Falls back gracefully when embedding API is not available.
+ * <p>
+ * Now uses the shared pooled {@link HttpClient} (injected via constructor)
+ * instead of a non-pooled {@code RestTemplate}.  This eliminates the per-request
+ * TCP+TLS handshake overhead that previously added 50-200ms to every RAG
+ * embedding call.
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class EmbeddingService {
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
+    public EmbeddingService(HttpClient pooledHttpClient) {
+        this.httpClient = pooledHttpClient;
+    }
 
     /**
      * Generate embedding vector for text.
@@ -36,24 +47,30 @@ public class EmbeddingService {
         String embeddingModel = inferEmbeddingModel(model);
 
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            if (apiKey != null && !apiKey.isBlank()) {
-                headers.setBearerAuth(apiKey);
-            }
-
             Map<String, Object> body = Map.of(
                 "model", embeddingModel,
                 "input", text.length() > 8000 ? text.substring(0, 8000) : text
             );
+            String json = objectMapper.writeValueAsString(body);
 
-            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
-            ResponseEntity<Map> response = restTemplate.postForEntity(
-                    embeddingEndpoint, request, Map.class);
+            var requestBuilder = HttpRequest.newBuilder()
+                    .uri(URI.create(embeddingEndpoint))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Content-Type", "application/json");
+            if (apiKey != null && !apiKey.isBlank()) {
+                requestBuilder.header("Authorization", "Bearer " + apiKey);
+            }
+            HttpRequest request = requestBuilder
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
 
-            if (response.getBody() != null) {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
                 @SuppressWarnings("unchecked")
-                List<Map<String, Object>> data = (List<Map<String, Object>>) response.getBody().get("data");
+                Map<String, Object> respMap = objectMapper.readValue(response.body(), Map.class);
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> data = (List<Map<String, Object>>) respMap.get("data");
                 if (data != null && !data.isEmpty()) {
                     @SuppressWarnings("unchecked")
                     List<Double> embedding = (List<Double>) data.get(0).get("embedding");
@@ -62,6 +79,8 @@ public class EmbeddingService {
                         return embedding;
                     }
                 }
+            } else {
+                log.debug("Embedding API returned {} for {}", response.statusCode(), embeddingEndpoint);
             }
         } catch (Exception e) {
             log.debug("Embedding API not available for {}: {}", embeddingEndpoint, e.getMessage());
